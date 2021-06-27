@@ -29,10 +29,9 @@ async def ex_paralelo(coroutine_tasks):
     await gather(*workers)
 
 
-async def ex_eterno(jobs):
-    while True:
-        for job in jobs:
-            await job
+def ex_eterno(loop):
+    print("Jesus")
+    loop.call_later(1, ex_eterno, loop)
 
 
 TOTAL = 5
@@ -69,7 +68,7 @@ def main():
 
     elif TIPO_RODAR == "loop_infinito":
         loop = get_event_loop()
-        ensure_future(ex_eterno([f(x) for x in range(TOTAL)]))
+        loop.call_soon(ex_eterno, loop)
         loop.run_forever()
 
 
