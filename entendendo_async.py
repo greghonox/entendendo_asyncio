@@ -1,8 +1,11 @@
-from asyncio import create_task, gather, get_event_loop, run, sleep
+from asyncio import create_task, gather, get_event_loop, run, sleep, Semaphore, Queue
 from random import randint, choice
 from datetime import datetime
+from itertools import repeat
 from requests import get
 from time import time
+
+# https://realpython.com/async-io-python/
 
 
 async def gravar_arquivo_txt(msg: str, tarefa: str, e: bool = True):
@@ -12,7 +15,7 @@ async def gravar_arquivo_txt(msg: str, tarefa: str, e: bool = True):
     with open("/tmp/arq.txt", "a") as f:
         f.write(
             datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-            + f" {tarefa:0>3}:{t:0>3} -- "
+            + f" {tarefa:0>9}:{t:0>9} -- "
             + msg
             + "\n"
         )
@@ -66,6 +69,81 @@ async def ex_paralelo(coroutine_tasks):
     await gather(*workers)
 
 
+async def semaforo(sem, t):
+    await sem.acquire()
+    m = randint(5, 10)
+    print(f"INICIANDO TAREFA: {t}, TEMPO PARA CONCLUIR: {m}")
+    print(f"ESPERANDO TAREFA: {t}")
+    await sleep(m)
+    sem.release()
+    print(f"TERMINANDO TAREFA: {t}")
+
+
+async def run_semaforo_paralelo(qtde_task: int):
+    qtde_paradas = randint(1, 5)
+    print(f"INICIANDO SEMAFORO C/ {qtde_paradas} PARADAS PARALELO")
+    semaphore = Semaphore(value=qtde_paradas)
+    await gather(*[create_task(semaforo(semaphore, x)) for x in range(qtde_task)])
+
+
+async def run_semaforo(qtde_tasks: int):
+    qtde_paradas = randint(1, 5)
+    print(f"INICIANDO SEMAFORO C/ {qtde_paradas} PARADAS")
+    semaphore = Semaphore(value=qtde_paradas)
+    for t in range(qtde_tasks):
+        exec("t_{} = create_task(semaforo(semaphore, {}))".format(t, t))
+
+    for t in range(qtde_tasks):
+        await eval(f"t_{t}")
+    print("FINALIZANDO SEMAFORO")
+
+
+class Fabric:
+    def __init__(self, tasks: dict, tam_con: int = 5, paralelo: bool = True):
+        self.paralelo = paralelo
+        self.tam_con = tam_con
+        self.fila = Queue()
+        self.tasks = tasks
+        run(self.main())
+
+    async def main(self):
+        tasks_p = [
+            create_task(self.produtor(x, e)) for e, x in enumerate(self.tasks.items())
+        ]
+
+        await self.fila.join()
+        await gather(*tasks_p)
+
+        print(
+            f"TOTAL DE TAREFAS PARA CONSUMIR {self.fila.qsize()} PARA {self.tam_con} CONSUMIDORES"
+        )
+        tasks_c = [
+            create_task(self.consumidor(f"CONSUMIDOR {x}")) for x in range(self.tam_con)
+        ]
+        await gather(*tasks_c, return_exceptions=True)
+
+    async def worker(self, t: str):
+        tempo = randint(1, 5)
+        print(f"EXECUTANDO TAREFA '{t}' TEMPO {tempo}")
+        await sleep(tempo)
+        return f"FINALIZANDO TAREFA '{t}' TEMPO {tempo}"
+
+    async def produtor(self, e: dict, t: str):
+        n = randint(1, 5)
+        print(f"PRODUTOR({t}) FILA DE '{e}' TAREFAS PARA FAZER")
+        for _ in repeat(None, n):
+            res = await self.worker(e)
+            await self.fila.put(res)
+
+    async def consumidor(self, con: str):
+        tempo = randint(1, 5)
+        while True:
+            await sleep(tempo)
+            res = await self.fila.get()
+            print(f"({con}) '{res}' TAREFAS DA FILA TEMPO PARA CONSUMIR {tempo}")
+            self.fila.task_done()
+
+
 class CoorepadoraNET:
     def __init__(self, qtde_tasks: int):
         run(self.run(qtde_tasks))
@@ -73,6 +151,7 @@ class CoorepadoraNET:
     async def run(self, qtde_tasks: int):
         for t in range(qtde_tasks):
             exec("t_{} = create_task(self.pegar_dados({}))".format(t, t))
+
         for t in range(qtde_tasks):
             await eval(f"t_{t}")
 
@@ -88,7 +167,7 @@ class CoorepadoraNET:
             print(f"ERRO OCORRIDO NA TAREFA {task}: {e}")
 
 
-TOTAL = 5
+TOTAL = 5000
 tarefas = [
     "CORRER",
     "ORAR",
@@ -115,11 +194,12 @@ def main():
         CoorepadoraNET(5)
 
     elif TIPO_RODAR == "run_cooperative_txt":
-        run(txt(5000, 500))
+        SOLICITACOES = 100000
+        run(txt(1000, SOLICITACOES))
         run(gravar_arquivo_txt(f"TEMPO CORRIDO: {time() - t_ini} ", "FIM", False))
-
+        print("INICIANDO MODO SERIE")
         t_in = time()
-        for t in range(5000):
+        for t in range(SOLICITACOES):
             run(txt(5000, t))
         run(gravar_arquivo_txt(f"TEMPO CORRIDO SERIE: {time() - t_in} ", "FIM", False))
 
@@ -128,15 +208,32 @@ def main():
         run(ex_paralelo([f(x) for x in range(TOTAL)]))
 
     elif TIPO_RODAR == "run_paralelo":
+        # CHAMA EM PARALELO AS ATIVIDADES, C/ SINCRONIA
         loop = get_event_loop()
         loop.run_until_complete(ex_serie([f(x) for x in range(TOTAL)]))
         loop.close()
 
     elif TIPO_RODAR == "loop_paralelo":
+        # CHAMA EM PARALELO AS ATIVIDADES, C/ SINCRONIA
         loop = get_event_loop()
         loop.run_until_complete(ex_paralelo([f(x) for x in range(TOTAL)]))
         loop.close()
 
+    elif TIPO_RODAR == "run_semaphore":
+        # ELE INICIA PELA QUANTIDADE DE PARADAS E DEPOIS QUE ELAS TERMINAREM ELE CHAMA AS PROXIMAS
+        loop = get_event_loop()
+        loop.run_until_complete(run_semaforo(10))
+        loop.close()
 
-TIPO_RODAR = "run_cooperative_net"
+    elif TIPO_RODAR == "run_semaphore_paralelo":
+        # FICA MUITO BAGUNÇADO, POIS ELES TRABALHANDO EM PARALELO
+        loop = get_event_loop()
+        loop.run_until_complete(run_semaforo_paralelo(10))
+        loop.close()
+
+    elif TIPO_RODAR == "run_fila":
+        Fabric({x: choice(tarefas) for x in range(TOTAL)}, 10000)
+
+
+TIPO_RODAR = "run_fila"
 main()
