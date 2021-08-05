@@ -1,9 +1,10 @@
-from asyncio import create_task, gather, get_event_loop, run, sleep, Semaphore, Queue
-from random import randint, choice
+from asyncio import Queue, Semaphore, create_task, gather, run, sleep
 from datetime import datetime
 from itertools import repeat
-from requests import get
+from random import choice, randint
 from time import time
+
+from requests import get
 
 # https://realpython.com/async-io-python/
 
@@ -209,31 +210,23 @@ def main():
 
     elif TIPO_RODAR == "run_paralelo":
         # CHAMA EM PARALELO AS ATIVIDADES, C/ SINCRONIA
-        loop = get_event_loop()
-        loop.run_until_complete(ex_serie([f(x) for x in range(TOTAL)]))
-        loop.close()
+        run(ex_serie([f(x) for x in range(TOTAL)]))
 
     elif TIPO_RODAR == "loop_paralelo":
         # CHAMA EM PARALELO AS ATIVIDADES, C/ SINCRONIA
-        loop = get_event_loop()
-        loop.run_until_complete(ex_paralelo([f(x) for x in range(TOTAL)]))
-        loop.close()
+        run(ex_paralelo([f(x) for x in range(TOTAL)]))
 
     elif TIPO_RODAR == "run_semaphore":
         # ELE INICIA PELA QUANTIDADE DE PARADAS E DEPOIS QUE ELAS TERMINAREM ELE CHAMA AS PROXIMAS
-        loop = get_event_loop()
-        loop.run_until_complete(run_semaforo(10))
-        loop.close()
+        run(run_semaforo(10))
 
     elif TIPO_RODAR == "run_semaphore_paralelo":
         # FICA MUITO BAGUNÇADO, POIS ELES TRABALHANDO EM PARALELO
-        loop = get_event_loop()
-        loop.run_until_complete(run_semaforo_paralelo(10))
-        loop.close()
+        run(run_semaforo_paralelo(10))
 
     elif TIPO_RODAR == "run_fila":
         Fabric({x: choice(tarefas) for x in range(TOTAL)}, 10000)
 
 
-TIPO_RODAR = "run_fila"
+TIPO_RODAR = "run_cooperative_net"
 main()
